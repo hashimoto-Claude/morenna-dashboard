@@ -12,64 +12,101 @@
       color: #2d3748;
       min-height: 100vh;
     }
+
+    /* ヘッダー */
     .header {
       background: linear-gradient(135deg, #1a2535 0%, #2d4a6e 100%);
       color: white;
-      padding: 20px 32px;
+      padding: 16px 20px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 10px;
     }
-    .header h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
-    .header .updated { font-size: 12px; opacity: 0.65; margin-top: 5px; }
-    .month-selector-wrap { display: flex; align-items: center; gap: 10px; }
-    .month-selector-wrap label { font-size: 12px; opacity: 0.8; white-space: nowrap; }
+    .header h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }
+    .header .updated { font-size: 11px; opacity: 0.65; margin-top: 4px; }
+    .month-selector-wrap { display: flex; align-items: center; gap: 8px; }
+    .month-selector-wrap label { font-size: 11px; opacity: 0.8; white-space: nowrap; }
     #month-select {
       background: rgba(255,255,255,0.15);
       color: white;
       border: 1px solid rgba(255,255,255,0.3);
       border-radius: 8px;
-      padding: 6px 12px;
+      padding: 6px 10px;
       font-size: 13px;
       cursor: pointer;
       outline: none;
+      max-width: 140px;
     }
     #month-select option { background: #1a2535; color: white; }
-    .main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 48px; }
+
+    /* メイン */
+    .main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
     .section-title {
       font-size: 11px; font-weight: 700; color: #718096;
-      text-transform: uppercase; letter-spacing: 1.2px; margin: 28px 0 12px;
+      text-transform: uppercase; letter-spacing: 1.2px; margin: 24px 0 10px;
     }
-    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-    @media (max-width: 700px) { .cards { grid-template-columns: repeat(2, 1fr); } }
-    .card { background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-    .card .label { font-size: 11px; font-weight: 700; color: #718096; letter-spacing: 0.5px; margin-bottom: 8px; }
-    .card .value { font-size: 24px; font-weight: 800; color: #1a2535; line-height: 1.1; }
-    .card .diff { font-size: 12px; margin-top: 8px; font-weight: 600; }
+
+    /* カード */
+    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 700px) { .cards { grid-template-columns: repeat(2, 1fr); gap: 10px; } }
+    .card { background: white; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+    .card .label { font-size: 10px; font-weight: 700; color: #718096; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .card .value { font-size: 20px; font-weight: 800; color: #1a2535; line-height: 1.1; }
+    @media (max-width: 400px) { .card .value { font-size: 17px; } }
+    .card .diff { font-size: 11px; margin-top: 6px; font-weight: 600; }
     .diff.up { color: #2f855a; } .diff.down { color: #c53030; } .diff.flat { color: #718096; }
-    .pipeline { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    .p-item { text-align: center; padding: 8px 0; }
-    .p-item .p-label { font-size: 11px; font-weight: 700; color: #718096; letter-spacing: 0.5px; }
-    .p-item .p-value { font-size: 36px; font-weight: 800; color: #2b6cb0; line-height: 1.1; margin-top: 4px; }
-    .p-item .p-unit { font-size: 12px; color: #718096; font-weight: 600; }
-    .table-wrap { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    thead th { background: #2d4a6e; color: white; padding: 10px 16px; text-align: right; font-weight: 700; font-size: 11px; white-space: nowrap; }
+
+    /* パイプライン */
+    .pipeline {
+      background: white; border-radius: 12px; padding: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    }
+    @media (max-width: 500px) { .pipeline { grid-template-columns: repeat(2, 1fr); } }
+    .p-item { text-align: center; padding: 6px 0; }
+    .p-item .p-label { font-size: 10px; font-weight: 700; color: #718096; letter-spacing: 0.5px; }
+    .p-item .p-value { font-size: 30px; font-weight: 800; color: #2b6cb0; line-height: 1.1; margin-top: 4px; }
+    .p-item .p-unit { font-size: 11px; color: #718096; font-weight: 600; }
+
+    /* テーブル共通 */
+    .table-wrap {
+      background: white; border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      overflow-x: auto; /* 全テーブルで横スクロール */
+      -webkit-overflow-scrolling: touch;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 400px; }
+    thead th {
+      background: #2d4a6e; color: white; padding: 10px 14px;
+      text-align: right; font-weight: 700; font-size: 11px; white-space: nowrap;
+    }
     thead th:first-child { text-align: left; }
-    tbody td { padding: 9px 16px; text-align: right; border-bottom: 1px solid #edf2f7; white-space: nowrap; }
+    tbody td {
+      padding: 9px 14px; text-align: right;
+      border-bottom: 1px solid #edf2f7; white-space: nowrap;
+    }
     tbody td:first-child { text-align: left; color: #4a5568; }
     tbody tr:last-child td { border-bottom: none; }
     tbody tr:hover td { background: #f7fafc; }
     tbody tr.today-row td { background: #ebf8ff; font-weight: 700; }
     tbody tr.total-row td { background: #f7fafc; font-weight: 700; border-top: 2px solid #e2e8f0; }
-    .case-table thead th { font-size: 10px; padding: 8px 10px; }
-    .case-table tbody td { padding: 8px 10px; font-size: 12px; }
+
+    /* 案件集計テーブル */
+    .case-table { min-width: 700px; }
+    .case-table thead th { font-size: 10px; padding: 8px 8px; }
+    .case-table tbody td { padding: 8px 8px; font-size: 12px; }
     .case-table .today-col { background: rgba(190,227,248,0.25); }
-    .badge { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; margin-left: 6px; vertical-align: middle; }
+
+    /* バッジ */
+    .badge {
+      display: inline-block; padding: 2px 7px; border-radius: 999px;
+      font-size: 10px; font-weight: 700; margin-left: 6px; vertical-align: middle;
+    }
     .badge-confirmed { background: #c6f6d5; color: #22543d; }
     .badge-ongoing { background: #bee3f8; color: #2a4365; }
+
     .loading { text-align: center; padding: 60px; color: #718096; font-size: 16px; }
     .no-data { text-align: center; padding: 20px; color: #a0aec0; font-size: 13px; }
   </style>
@@ -226,7 +263,6 @@ async function init() {
     var months = Object.keys(histByMonth).sort(function(a,b) { return b.localeCompare(a); });
     var latest = histRows[histRows.length-1];
 
-    // 月セレクター
     var sel = document.getElementById('month-select');
     months.forEach(function(m, i) {
       var opt = document.createElement('option');
@@ -241,7 +277,6 @@ async function init() {
     document.getElementById('main-content').innerHTML =
       '<div id="dynamic-section"></div><div id="static-section"></div>';
 
-    // 固定部分（月次・週次）
     function renderStatic() {
       var html = '';
       html += '<div class="section-title">月次推移</div>';
@@ -271,7 +306,6 @@ async function init() {
       document.getElementById('static-section').innerHTML = html;
     }
 
-    // 月選択部分
     function render(selectedMonth) {
       var rows = histByMonth[selectedMonth] || [];
       var latest = rows[0]; var prev = rows[1] || null;
@@ -313,7 +347,7 @@ async function init() {
       if (!caseDateRows.length) {
         html += '<div class="table-wrap"><div class="no-data">データがありません</div></div>';
       } else {
-        html += '<div class="table-wrap" style="overflow-x:auto"><table class="case-table">';
+        html += '<div class="table-wrap"><table class="case-table">';
         html += '<thead><tr><th>クライアント</th>';
         html += '<th>退去立会<br><small style="opacity:.7">月累計</small></th><th>空室<br><small style="opacity:.7">月累計</small></th><th>入居対応<br><small style="opacity:.7">月累計</small></th><th>リフォーム<br><small style="opacity:.7">月累計</small></th><th>その他<br><small style="opacity:.7">月累計</small></th><th>合計<br><small style="opacity:.7">月累計</small></th>';
         html += '<th class="today-col">退去立会<br><small style="opacity:.7">本日</small></th><th class="today-col">空室<br><small style="opacity:.7">本日</small></th><th class="today-col">入居対応<br><small style="opacity:.7">本日</small></th><th class="today-col">リフォーム<br><small style="opacity:.7">本日</small></th><th class="today-col">その他<br><small style="opacity:.7">本日</small></th><th class="today-col">合計<br><small style="opacity:.7">本日</small></th>';
