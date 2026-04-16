@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MORENNA 売上ダッシュボード</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+      background: #f0f4f8;
+      color: #2d3748;
+      min-height: 100vh;
+    }
+    .header {
+      background: linear-gradient(135deg, #1a2535 0%, #2d4a6e 100%);
+      color: white;
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .header h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+    .header .updated { font-size: 12px; opacity: 0.65; margin-top: 5px; }
+    .month-selector-wrap { display: flex; align-items: center; gap: 10px; }
+    .month-selector-wrap label { font-size: 12px; opacity: 0.8; white-space: nowrap; }
+    #month-select {
+      background: rgba(255,255,255,0.15);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+    #month-select option { background: #1a2535; color: white; }
+    .main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 48px; }
+    .section-title {
+      font-size: 11px; font-weight: 700; color: #718096;
+      text-transform: uppercase; letter-spacing: 1.2px; margin: 28px 0 12px;
+    }
+    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    @media (max-width: 700px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+    .card { background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+    .card .label { font-size: 11px; font-weight: 700; color: #718096; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .card .value { font-size: 24px; font-weight: 800; color: #1a2535; line-height: 1.1; }
+    .card .diff { font-size: 12px; margin-top: 8px; font-weight: 600; }
+    .diff.up { color: #2f855a; } .diff.down { color: #c53030; } .diff.flat { color: #718096; }
+    .pipeline { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .p-item { text-align: center; padding: 8px 0; }
+    .p-item .p-label { font-size: 11px; font-weight: 700; color: #718096; letter-spacing: 0.5px; }
+    .p-item .p-value { font-size: 36px; font-weight: 800; color: #2b6cb0; line-height: 1.1; margin-top: 4px; }
+    .p-item .p-unit { font-size: 12px; color: #718096; font-weight: 600; }
+    .table-wrap { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th { background: #2d4a6e; color: white; padding: 10px 16px; text-align: right; font-weight: 700; font-size: 11px; white-space: nowrap; }
+    thead th:first-child { text-align: left; }
+    tbody td { padding: 9px 16px; text-align: right; border-bottom: 1px solid #edf2f7; white-space: nowrap; }
+    tbody td:first-child { text-align: left; color: #4a5568; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #f7fafc; }
+    tbody tr.today-row td { background: #ebf8ff; font-weight: 700; }
+    tbody tr.total-row td { background: #f7fafc; font-weight: 700; border-top: 2px solid #e2e8f0; }
+    .case-table thead th { font-size: 10px; padding: 8px 10px; }
+    .case-table tbody td { padding: 8px 10px; font-size: 12px; }
+    .case-table .today-col { background: rgba(190,227,248,0.25); }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; margin-left: 6px; vertical-align: middle; }
+    .badge-confirmed { background: #c6f6d5; color: #22543d; }
+    .badge-ongoing { background: #bee3f8; color: #2a4365; }
+    .loading { text-align: center; padding: 60px; color: #718096; font-size: 16px; }
+    .no-data { text-align: center; padding: 20px; color: #a0aec0; font-size: 13px; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>📊 MORENNA 売上ダッシュボード</h1>
+    <div class="updated" id="updated-text">読み込み中...</div>
+  </div>
+  <div class="month-selector-wrap">
+    <label>表示月：</label>
+    <select id="month-select"></select>
+  </div>
+</div>
+<div class="main" id="main-content">
+  <div class="loading">データを読み込み中...</div>
+</div>
+
+<script>
+const SHEET_ID = '1GDfQDriEQErfpygGoJk4aGpsutsBnPHlop6dHsX0-wU';
+
+async function fetchSheet(name) {
+  const url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID +
+    '/gviz/tq?tqx=out:json&sheet=' + encodeURIComponent(name);
+  const res = await fetch(url);
+  const text = await res.text();
+  const jsonStr = text.slice(text.indexOf('(') + 1, text.lastIndexOf(')'));
+  const json = JSON.parse(jsonStr);
+  if (json.status === 'error') throw new Error(name + ' 読み込みエラー');
+  return json.table;
+}
+
+function parseDate(v) {
+  if (!v) return null;
+  if (typeof v === 'string' && v.startsWith('Date(')) {
+    const p = v.slice(5, -1).split(',').map(Number);
+    return p[0] + '-' + String(p[1]+1).padStart(2,'0') + '-' + String(p[2]).padStart(2,'0');
+  }
+  return v ? v.toString().slice(0,10).replace(/\//g,'-') : null;
+}
+
+function parseRows(table) {
+  return (table.rows || []).map(row => (row.c || []).map(cell => cell ? cell.v : null));
+}
+
+function yen(n) { return '¥' + Number(n).toLocaleString('ja-JP'); }
+function pct(n) { return (Number(n)*100).toFixed(1) + '%'; }
+function fmtDate(s) {
+  if (!s) return '';
+  const p = s.split('-');
+  return p.length >= 3 ? parseInt(p[1]) + '/' + parseInt(p[2]) : s;
+}
+function fmtDateFull(s) {
+  if (!s) return '';
+  const p = s.split('-');
+  if (p.length < 3) return s;
+  const days = ['日','月','火','水','木','金','土'];
+  const dt = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+  return p[0] + '年' + parseInt(p[1]) + '月' + parseInt(p[2]) + '日（' + days[dt.getDay()] + '）';
+}
+function fmtMonth(s) {
+  if (!s) return '';
+  const p = s.toString().slice(0,7).replace(/\//g,'-').split('-');
+  return p.length >= 2 ? p[0] + '年' + parseInt(p[1]) + '月' : s;
+}
+function diffHtml(val, isYen, isPct) {
+  if (val === null || val === undefined) return '';
+  var cls = val > 0 ? 'up' : val < 0 ? 'down' : 'flat';
+  var sign = val > 0 ? '▲ ' : val < 0 ? '▼ ' : '→ ';
+  var str = isPct
+    ? sign + (Math.abs(val)*100).toFixed(1) + '% 前日比'
+    : isYen
+      ? sign + '¥' + Math.abs(val).toLocaleString('ja-JP') + ' 前日比'
+      : sign + Math.abs(val) + ' 前日比';
+  return '<div class="diff ' + cls + '">' + str + '</div>';
+}
+function card(label, value, diffStr) {
+  return '<div class="card"><div class="label">' + label + '</div><div class="value">' + value + '</div>' + (diffStr||'') + '</div>';
+}
+function pItem(label, val) {
+  return '<div class="p-item"><div class="p-label">' + label + '</div><div class="p-value">' + val + '</div><div class="p-unit">件</div></div>';
+}
+
+async function init() {
+  try {
+    const [histTable, monthlyTable, weeklyTable, caseTable] = await Promise.all([
+      fetchSheet('履歴'),
+      fetchSheet('月次まとめ'),
+      fetchSheet('週次推移').catch(() => null),
+      fetchSheet('案件集計_履歴').catch(() => null),
+    ]);
+
+    const histRows = parseRows(histTable).filter(r => r[0]);
+    const monthlyRows = parseRows(monthlyTable).filter(r => r[0]);
+    const weeklyRows = weeklyTable ? parseRows(weeklyTable).filter(r => r[0]) : [];
+    const caseRows = caseTable ? parseRows(caseTable).filter(r => r[0]) : [];
+
+    if (!histRows.length) {
+      document.getElementById('main-content').innerHTML = '<div class="loading">データがありません</div>';
+      return;
+    }
+
+    function fmtHist(r) {
+      return {
+        date: parseDate(r[0]), kankoUri: Number(r[1])||0, kankoArari: Number(r[2])||0,
+        kankoArariRate: Number(r[3])||0, kankoKen: Number(r[4])||0, chakuchi: Number(r[5])||0,
+        shinkyo: Number(r[6])||0, mitsumori: Number(r[7])||0, seko: Number(r[8])||0, kankoChu: Number(r[9])||0,
+      };
+    }
+    function fmtMonthly(r) {
+      const m = parseDate(r[0]);
+      return {
+        month: m ? m.slice(0,7) : (r[0]||'').toString().slice(0,7),
+        kankoUri: Number(r[1])||0, kankoArari: Number(r[2])||0,
+        kankoArariRate: Number(r[3])||0, kankoKen: Number(r[4])||0, chakuchi: Number(r[5])||0,
+        confirmed: r[6] === true || r[6] === 'TRUE',
+      };
+    }
+    function fmtWeekly(r) {
+      return {
+        date: parseDate(r[0]), kankoUri: Number(r[1])||0, kankoArari: Number(r[2])||0,
+        kankoArariRate: Number(r[3])||0, kankoKen: Number(r[4])||0, chakuchi: Number(r[5])||0,
+      };
+    }
+    function fmtCase(r) {
+      return {
+        date: parseDate(r[0]), client: r[1] ? r[1].toString() : '',
+        m_taikyo: Number(r[2])||0, m_kushitsu: Number(r[3])||0, m_nyukyo: Number(r[4])||0,
+        m_reform: Number(r[5])||0, m_other: Number(r[6])||0, m_total: Number(r[7])||0,
+        t_taikyo: Number(r[8])||0, t_kushitsu: Number(r[9])||0, t_nyukyo: Number(r[10])||0,
+        t_reform: Number(r[11])||0, t_other: Number(r[12])||0, t_total: Number(r[13])||0,
+      };
+    }
+
+    var histByMonth = {};
+    histRows.forEach(function(r) {
+      var d = parseDate(r[0]); if (!d) return;
+      var m = d.slice(0,7);
+      if (!histByMonth[m]) histByMonth[m] = [];
+      histByMonth[m].push(fmtHist(r));
+    });
+    Object.keys(histByMonth).forEach(function(m) {
+      histByMonth[m].sort(function(a,b) { return b.date.localeCompare(a.date); });
+    });
+
+    var caseByDate = {};
+    caseRows.forEach(function(r) {
+      var d = parseDate(r[0]); if (!d) return;
+      if (!caseByDate[d]) caseByDate[d] = [];
+      caseByDate[d].push(fmtCase(r));
+    });
+
+    var months = Object.keys(histByMonth).sort(function(a,b) { return b.localeCompare(a); });
+    var latest = histRows[histRows.length-1];
+
+    // 月セレクター
+    var sel = document.getElementById('month-select');
+    months.forEach(function(m, i) {
+      var opt = document.createElement('option');
+      opt.value = m; opt.textContent = fmtMonth(m);
+      if (i === 0) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', function() { render(sel.value); });
+
+    document.getElementById('updated-text').textContent = '最終更新: ' + fmtDateFull(parseDate(latest[0]));
+
+    document.getElementById('main-content').innerHTML =
+      '<div id="dynamic-section"></div><div id="static-section"></div>';
+
+    // 固定部分（月次・週次）
+    function renderStatic() {
+      var html = '';
+      html += '<div class="section-title">月次推移</div>';
+      html += '<div class="table-wrap"><table>';
+      html += '<thead><tr><th>月</th><th>完工済み売上</th><th>粗利額</th><th>粗利率</th><th>件数</th><th>着地見込み</th></tr></thead><tbody>';
+      monthlyRows.slice().reverse().forEach(function(r) {
+        var m = fmtMonthly(r);
+        var badge = m.confirmed
+          ? '<span class="badge badge-confirmed">確定</span>'
+          : '<span class="badge badge-ongoing">進行中</span>';
+        html += '<tr><td>' + fmtMonth(m.month) + badge + '</td><td>' + yen(m.kankoUri) + '</td><td>' + yen(m.kankoArari) + '</td><td>' + pct(m.kankoArariRate) + '</td><td>' + m.kankoKen + '件</td><td>' + yen(m.chakuchi) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+
+      html += '<div class="section-title">週次推移（金曜スナップショット）</div>';
+      if (!weeklyRows.length) {
+        html += '<div class="table-wrap"><div class="no-data">データがありません（金曜日に蓄積されます）</div></div>';
+      } else {
+        html += '<div class="table-wrap"><table>';
+        html += '<thead><tr><th>週（金曜）</th><th>完工済み売上</th><th>粗利額</th><th>粗利率</th><th>件数</th><th>着地見込み</th></tr></thead><tbody>';
+        weeklyRows.slice().reverse().forEach(function(r) {
+          var w = fmtWeekly(r);
+          html += '<tr><td>' + fmtDate(w.date) + '</td><td>' + yen(w.kankoUri) + '</td><td>' + yen(w.kankoArari) + '</td><td>' + pct(w.kankoArariRate) + '</td><td>' + w.kankoKen + '件</td><td>' + yen(w.chakuchi) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      document.getElementById('static-section').innerHTML = html;
+    }
+
+    // 月選択部分
+    function render(selectedMonth) {
+      var rows = histByMonth[selectedMonth] || [];
+      var latest = rows[0]; var prev = rows[1] || null;
+      var isCurrentMonth = (selectedMonth === months[0]);
+      if (!latest) {
+        document.getElementById('dynamic-section').innerHTML = '<div class="table-wrap"><div class="no-data">この月のデータがありません</div></div>';
+        return;
+      }
+      var dUri = prev ? latest.kankoUri - prev.kankoUri : null;
+      var dArari = prev ? latest.kankoArari - prev.kankoArari : null;
+      var dRate = prev ? latest.kankoArariRate - prev.kankoArariRate : null;
+      var dChak = prev ? latest.chakuchi - prev.chakuchi : null;
+      var html = '';
+
+      html += '<div class="section-title">' + fmtMonth(selectedMonth) + ' サマリー</div>';
+      html += '<div class="cards">';
+      html += card('完工済み売上', yen(latest.kankoUri), isCurrentMonth ? diffHtml(dUri,true,false) : null);
+      html += card('粗利額', yen(latest.kankoArari), isCurrentMonth ? diffHtml(dArari,true,false) : null);
+      html += card('粗利率', pct(latest.kankoArariRate), isCurrentMonth ? diffHtml(dRate,false,true) : null);
+      html += card('月内着地見込み', yen(latest.chakuchi), isCurrentMonth ? diffHtml(dChak,true,false) : null);
+      html += '</div>';
+
+      if (isCurrentMonth) {
+        html += '<div class="section-title">進行中パイプライン</div>';
+        html += '<div class="pipeline">';
+        html += pItem('現調', latest.shinkyo);
+        html += pItem('見積', latest.mitsumori);
+        html += pItem('施工', latest.seko);
+        html += pItem('完工', latest.kankoChu);
+        html += '</div>';
+      }
+
+      html += '<div class="section-title">案件集計（Slackレポート）</div>';
+      var caseDate = null;
+      for (var i = 0; i < rows.length; i++) {
+        if (caseByDate[rows[i].date] && caseByDate[rows[i].date].length > 0) { caseDate = rows[i].date; break; }
+      }
+      var caseDateRows = caseDate ? caseByDate[caseDate] : [];
+      if (!caseDateRows.length) {
+        html += '<div class="table-wrap"><div class="no-data">データがありません</div></div>';
+      } else {
+        html += '<div class="table-wrap" style="overflow-x:auto"><table class="case-table">';
+        html += '<thead><tr><th>クライアント</th>';
+        html += '<th>退去立会<br><small style="opacity:.7">月累計</small></th><th>空室<br><small style="opacity:.7">月累計</small></th><th>入居対応<br><small style="opacity:.7">月累計</small></th><th>リフォーム<br><small style="opacity:.7">月累計</small></th><th>その他<br><small style="opacity:.7">月累計</small></th><th>合計<br><small style="opacity:.7">月累計</small></th>';
+        html += '<th class="today-col">退去立会<br><small style="opacity:.7">本日</small></th><th class="today-col">空室<br><small style="opacity:.7">本日</small></th><th class="today-col">入居対応<br><small style="opacity:.7">本日</small></th><th class="today-col">リフォーム<br><small style="opacity:.7">本日</small></th><th class="today-col">その他<br><small style="opacity:.7">本日</small></th><th class="today-col">合計<br><small style="opacity:.7">本日</small></th>';
+        html += '</tr></thead><tbody>';
+        var tot = {m_taikyo:0,m_kushitsu:0,m_nyukyo:0,m_reform:0,m_other:0,m_total:0,t_taikyo:0,t_kushitsu:0,t_nyukyo:0,t_reform:0,t_other:0,t_total:0};
+        caseDateRows.forEach(function(r) {
+          tot.m_taikyo+=r.m_taikyo; tot.m_kushitsu+=r.m_kushitsu; tot.m_nyukyo+=r.m_nyukyo; tot.m_reform+=r.m_reform; tot.m_other+=r.m_other; tot.m_total+=r.m_total;
+          tot.t_taikyo+=r.t_taikyo; tot.t_kushitsu+=r.t_kushitsu; tot.t_nyukyo+=r.t_nyukyo; tot.t_reform+=r.t_reform; tot.t_other+=r.t_other; tot.t_total+=r.t_total;
+          html += '<tr><td>' + r.client + '</td>';
+          html += '<td>' + (r.m_taikyo||'-') + '</td><td>' + (r.m_kushitsu||'-') + '</td><td>' + (r.m_nyukyo||'-') + '</td><td>' + (r.m_reform||'-') + '</td><td>' + (r.m_other||'-') + '</td><td><strong>' + r.m_total + '</strong></td>';
+          html += '<td class="today-col">' + (r.t_taikyo||'-') + '</td><td class="today-col">' + (r.t_kushitsu||'-') + '</td><td class="today-col">' + (r.t_nyukyo||'-') + '</td><td class="today-col">' + (r.t_reform||'-') + '</td><td class="today-col">' + (r.t_other||'-') + '</td><td class="today-col"><strong>' + r.t_total + '</strong></td>';
+          html += '</tr>';
+        });
+        html += '<tr class="total-row"><td>合　計</td>';
+        html += '<td>' + tot.m_taikyo + '</td><td>' + tot.m_kushitsu + '</td><td>' + tot.m_nyukyo + '</td><td>' + tot.m_reform + '</td><td>' + tot.m_other + '</td><td>' + tot.m_total + '</td>';
+        html += '<td class="today-col">' + tot.t_taikyo + '</td><td class="today-col">' + tot.t_kushitsu + '</td><td class="today-col">' + tot.t_nyukyo + '</td><td class="today-col">' + tot.t_reform + '</td><td class="today-col">' + tot.t_other + '</td><td class="today-col">' + tot.t_total + '</td>';
+        html += '</tr></tbody></table></div>';
+        html += '<div style="font-size:11px;color:#718096;margin-top:6px;padding:0 4px;">集計日: ' + fmtDateFull(caseDate) + '</div>';
+      }
+
+      html += '<div class="section-title">' + fmtMonth(selectedMonth) + ' 日別推移</div>';
+      html += '<div class="table-wrap"><table>';
+      html += '<thead><tr><th>日付</th><th>完工済み売上</th><th>粗利額</th><th>粗利率</th><th>件数</th><th>着地見込み</th></tr></thead><tbody>';
+      rows.forEach(function(row, i) {
+        var cls = (isCurrentMonth && i === 0) ? ' class="today-row"' : '';
+        html += '<tr' + cls + '><td>' + fmtDate(row.date) + (isCurrentMonth && i === 0 ? ' <span class="badge badge-ongoing">本日</span>' : '') + '</td><td>' + yen(row.kankoUri) + '</td><td>' + yen(row.kankoArari) + '</td><td>' + pct(row.kankoArariRate) + '</td><td>' + row.kankoKen + '件</td><td>' + yen(row.chakuchi) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      document.getElementById('dynamic-section').innerHTML = html;
+    }
+
+    renderStatic();
+    render(months[0]);
+
+  } catch(e) {
+    document.getElementById('main-content').innerHTML = '<div class="loading">⚠️ ' + e.message + '</div>';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
