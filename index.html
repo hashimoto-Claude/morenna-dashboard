@@ -193,15 +193,13 @@ function pItem(label, val) {
 
 async function init() {
   try {
-    const [histTable, monthlyTable, weeklyTable, caseTable] = await Promise.all([
+    const [histTable, weeklyTable, caseTable] = await Promise.all([
       fetchSheet('履歴'),
-      fetchSheet('月次まとめ'),
       fetchSheet('週次推移').catch(() => null),
       fetchSheet('案件集計_履歴').catch(() => null),
     ]);
 
     const histRows = parseRows(histTable).filter(r => r[0]);
-    const monthlyRows = parseRows(monthlyTable).filter(r => r[0]);
     const weeklyRows = weeklyTable ? parseRows(weeklyTable).filter(r => r[0]) : [];
     const caseRows = caseTable ? parseRows(caseTable).filter(r => r[0]) : [];
 
@@ -282,12 +280,15 @@ async function init() {
       html += '<div class="section-title">月次推移</div>';
       html += '<div class="table-wrap"><table>';
       html += '<thead><tr><th>月</th><th>完工済み売上</th><th>粗利額</th><th>粗利率</th><th>件数</th><th>着地見込み</th></tr></thead><tbody>';
-      monthlyRows.slice().reverse().forEach(function(r) {
-        var m = fmtMonthly(r);
-        var badge = m.confirmed
+      var now = new Date();
+      var currentMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+      var allMonths = Object.keys(histByMonth).sort(function(a,b) { return b.localeCompare(a); });
+      allMonths.forEach(function(m) {
+        var latest = histByMonth[m][0]; // 各月の最終日データ（降順ソート済み）
+        var badge = m < currentMonth
           ? '<span class="badge badge-confirmed">確定</span>'
           : '<span class="badge badge-ongoing">進行中</span>';
-        html += '<tr><td>' + fmtMonth(m.month) + badge + '</td><td>' + yen(m.kankoUri) + '</td><td>' + yen(m.kankoArari) + '</td><td>' + pct(m.kankoArariRate) + '</td><td>' + m.kankoKen + '件</td><td>' + yen(m.chakuchi) + '</td></tr>';
+        html += '<tr><td>' + fmtMonth(m) + badge + '</td><td>' + yen(latest.kankoUri) + '</td><td>' + yen(latest.kankoArari) + '</td><td>' + pct(latest.kankoArariRate) + '</td><td>' + latest.kankoKen + '件</td><td>' + yen(latest.chakuchi) + '</td></tr>';
       });
       html += '</tbody></table></div>';
 
