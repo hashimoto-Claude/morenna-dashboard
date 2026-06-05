@@ -194,15 +194,17 @@ function pItem(label, val) {
 
 async function init() {
   try {
-    const [histTable, weeklyTable, caseTable] = await Promise.all([
+    const [histTable, weeklyTable, caseTable, monthlyTable] = await Promise.all([
       fetchSheet('履歴'),
       fetchSheet('週次推移').catch(() => null),
       fetchSheet('案件集計_履歴').catch(() => null),
+      fetchSheet('月次まとめ').catch(() => null),
     ]);
 
     const histRows = parseRows(histTable).filter(r => r[0]);
     const weeklyRows = weeklyTable ? parseRows(weeklyTable).filter(r => r[0]) : [];
     const caseRows = caseTable ? parseRows(caseTable).filter(r => r[0]) : [];
+    const monthlyRows = monthlyTable ? parseRows(monthlyTable).filter(r => r[0]) : [];
 
     if (!histRows.length) {
       document.getElementById('main-content').innerHTML = '<div class="loading">データがありません</div>';
@@ -252,6 +254,29 @@ async function init() {
       histByMonth[m].sort(function(a,b) { return b.date.localeCompare(a.date); });
     });
 
+    // 「月次まとめ」シート（月ごとの確定値）を月キーで保持
+    var monthlyByMonth = {};
+    monthlyRows.forEach(function(r) {
+      var mo = fmtMonthly(r);
+      if (mo.month) monthlyByMonth[mo.month] = mo;
+    });
+    // 月の代表値：確定済みの月は「月次まとめ」、未確定/直近は「履歴」最終日を使う
+    function monthFigure(m) {
+      var mo = monthlyByMonth[m];
+      var h = (histByMonth[m] && histByMonth[m][0]) || null;
+      var hHasData = h && (h.kankoUri || h.kankoKen);
+      if (mo && mo.confirmed) return mo;   // 確定月は月次まとめを優先
+      if (hHasData) return h;              // 直近・未確定は履歴の最新日
+      if (mo) return mo;                   // 月次まとめに暫定値があれば使う
+      return h;
+    }
+    function allMonthKeys() {
+      var set = {};
+      Object.keys(histByMonth).forEach(function(m){ set[m] = 1; });
+      Object.keys(monthlyByMonth).forEach(function(m){ set[m] = 1; });
+      return Object.keys(set);
+    }
+
     var caseByDate = {};
     caseRows.forEach(function(r) {
       var d = parseDate(r[0]); if (!d) return;
@@ -259,7 +284,7 @@ async function init() {
       caseByDate[d].push(fmtCase(r));
     });
 
-    var months = Object.keys(histByMonth).sort(function(a,b) { return b.localeCompare(a); });
+    var months = allMonthKeys().sort(function(a,b) { return b.localeCompare(a); });
     var latest = histRows[histRows.length-1];
 
     var sel = document.getElementById('month-select');
@@ -283,9 +308,10 @@ async function init() {
       html += '<thead><tr><th>月</th><th>完工済み売上</th><th>粗利額</th><th>粗利率</th><th>件数</th><th>着地見込み</th></tr></thead><tbody>';
       var now = new Date();
       var currentMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-      var allMonths = Object.keys(histByMonth).sort(function(a,b) { return b.localeCompare(a); });
+      var allMonths = allMonthKeys().sort(function(a,b) { return b.localeCompare(a); });
       allMonths.forEach(function(m) {
-        var latest = histByMonth[m][0]; // 各月の最終日データ（降順ソート済み）
+        var latest = monthFigure(m); // 確定月は月次まとめ、未確定/直近は履歴最終日
+        if (!latest) return;
         var badge = m < currentMonth
           ? '<span class="badge badge-confirmed">確定</span>'
           : '<span class="badge badge-ongoing">進行中</span>';
@@ -310,7 +336,9 @@ async function init() {
 
     function render(selectedMonth) {
       var rows = histByMonth[selectedMonth] || [];
-      var latest = rows[0]; var prev = rows[1] || null;
+      var hLatest = (rows[0] && (rows[0].kankoUri || rows[0].kankoKen)) ? rows[0] : null;
+      var latest = hLatest || monthFigure(selectedMonth); // 履歴に数字が無い確定月は月次まとめを使う
+      var prev = rows[1] || null;
       var isCurrentMonth = (selectedMonth === months[0]);
       if (!latest) {
         document.getElementById('dynamic-section').innerHTML = '<div class="table-wrap"><div class="no-data">この月のデータがありません</div></div>';
@@ -373,10 +401,15 @@ async function init() {
       html += '<div class="section-title">' + fmtMonth(selectedMonth) + ' 日別推移</div>';
       html += '<div class="table-wrap"><table>';
       html += '<thead><tr><th>日付</th><th>完工済み売上</th><th>粗利額</th><th>粗利率</th><th>件数</th><th>着地見込み</th></tr></thead><tbody>';
-      rows.forEach(function(row, i) {
-        var cls = (isCurrentMonth && i === 0) ? ' class="today-row"' : '';
-        html += '<tr' + cls + '><td>' + fmtDate(row.date) + (isCurrentMonth && i === 0 ? ' <span class="badge badge-ongoing">本日</span>' : '') + '</td><td>' + yen(row.kankoUri) + '</td><td>' + yen(row.kankoArari) + '</td><td>' + pct(row.kankoArariRate) + '</td><td>' + row.kankoKen + '件</td><td>' + yen(row.chakuchi) + '</td></tr>';
-      });
+      var dailyRows = rows.filter(function(r){ return r.kankoUri || r.kankoKen; });
+      if (!dailyRows.length) {
+        html += '<tr><td colspan="6" class="no-data">日次データがありません（確定月）</td></tr>';
+      } else {
+        dailyRows.forEach(function(row, i) {
+          var cls = (isCurrentMonth && i === 0) ? ' class="today-row"' : '';
+          html += '<tr' + cls + '><td>' + fmtDate(row.date) + (isCurrentMonth && i === 0 ? ' <span class="badge badge-ongoing">本日</span>' : '') + '</td><td>' + yen(row.kankoUri) + '</td><td>' + yen(row.kankoArari) + '</td><td>' + pct(row.kankoArariRate) + '</td><td>' + row.kankoKen + '件</td><td>' + yen(row.chakuchi) + '</td></tr>';
+        });
+      }
       html += '</tbody></table></div>';
       document.getElementById('dynamic-section').innerHTML = html;
     }
