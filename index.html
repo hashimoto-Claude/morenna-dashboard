@@ -107,6 +107,8 @@
     }
     .badge-confirmed { background: #c6f6d5; color: #22543d; }
     .badge-ongoing { background: #bee3f8; color: #2a4365; }
+    .badge-provisional { background: #feebc8; color: #7b341e; }
+    .section-note { font-size: 11px; color: #718096; margin: -6px 0 8px; }
 
     .loading { text-align: center; padding: 60px; color: #718096; font-size: 16px; }
     .no-data { text-align: center; padding: 20px; color: #a0aec0; font-size: 13px; }
@@ -304,6 +306,7 @@ async function init() {
     function renderStatic() {
       var html = '';
       html += '<div class="section-title">月次推移</div>';
+      html += '<div class="section-note">※ 数字は翌月10日頃の月次クローズで確定します。それまでは「仮確定」です。</div>';
       html += '<div class="table-wrap"><table>';
       html += '<thead><tr><th>月</th><th>完工済み売上</th><th>粗利額</th><th>粗利率</th><th>件数</th><th>着地見込み</th></tr></thead><tbody>';
       var now = new Date();
@@ -312,9 +315,16 @@ async function init() {
       allMonths.forEach(function(m) {
         var latest = monthFigure(m); // 確定月は月次まとめ、未確定/直近は履歴最終日
         if (!latest) return;
-        var badge = m < currentMonth
-          ? '<span class="badge badge-confirmed">確定</span>'
-          : '<span class="badge badge-ongoing">進行中</span>';
+        // 当月=進行中／過去月は「月次まとめ」の確定フラグ(G列)がTRUEなら確定、未クローズは仮確定
+        var mo = monthlyByMonth[m];
+        var badge;
+        if (m >= currentMonth) {
+          badge = '<span class="badge badge-ongoing">進行中</span>';
+        } else if (mo && mo.confirmed) {
+          badge = '<span class="badge badge-confirmed">確定</span>';
+        } else {
+          badge = '<span class="badge badge-provisional">仮確定</span>';
+        }
         html += '<tr><td>' + fmtMonth(m) + badge + '</td><td>' + yen(latest.kankoUri) + '</td><td>' + yen(latest.kankoArari) + '</td><td>' + pct(latest.kankoArariRate) + '</td><td>' + latest.kankoKen + '件</td><td>' + yen(latest.chakuchi) + '</td></tr>';
       });
       html += '</tbody></table></div>';
