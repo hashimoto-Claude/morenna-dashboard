@@ -41,8 +41,23 @@
     }
     #month-select option { background: #1a2535; color: white; }
 
+    /* タブ */
+    .tabs {
+      background: #2d4a6e; display: flex; gap: 4px; padding: 0 16px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .tabs button {
+      background: none; border: none; color: rgba(255,255,255,0.65);
+      font-size: 13px; font-weight: 700; padding: 11px 16px; cursor: pointer;
+      border-bottom: 3px solid transparent; white-space: nowrap; font-family: inherit;
+    }
+    .tabs button.active { color: white; border-bottom-color: #63b3ed; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
     /* メイン */
-    .main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+    .main { max-width: 1100px; margin: 0 auto; padding: 4px 16px 48px; }
     .section-title {
       font-size: 11px; font-weight: 700; color: #718096;
       text-transform: uppercase; letter-spacing: 1.2px; margin: 24px 0 10px;
@@ -88,10 +103,14 @@
       border-bottom: 1px solid #edf2f7; white-space: nowrap;
     }
     tbody td:first-child { text-align: left; color: #4a5568; }
+    tbody td.left { text-align: left; }
     tbody tr:last-child td { border-bottom: none; }
     tbody tr:hover td { background: #f7fafc; }
     tbody tr.today-row td { background: #ebf8ff; font-weight: 700; }
     tbody tr.total-row td { background: #f7fafc; font-weight: 700; border-top: 2px solid #e2e8f0; }
+    td.neg { color: #c53030; font-weight: 700; }
+    td.low { color: #c05621; font-weight: 700; }
+    td.pos { color: #2f855a; }
 
     /* 案件集計テーブル */
     .case-table { min-width: 700px; }
@@ -108,7 +127,10 @@
     .badge-confirmed { background: #c6f6d5; color: #22543d; }
     .badge-ongoing { background: #bee3f8; color: #2a4365; }
     .badge-provisional { background: #feebc8; color: #7b341e; }
-    .section-note { font-size: 11px; color: #718096; margin: -6px 0 8px; }
+    .badge-large { background: #e9d8fd; color: #44337a; margin-left: 0; margin-right: 4px; }
+    .badge-low { background: #feebc8; color: #7b341e; margin-left: 0; margin-right: 4px; }
+    .badge-neg { background: #fed7d7; color: #822727; margin-left: 0; margin-right: 4px; }
+    .section-note { font-size: 11px; color: #718096; margin: -6px 0 8px; line-height: 1.6; }
 
     .loading { text-align: center; padding: 60px; color: #718096; font-size: 16px; }
     .no-data { text-align: center; padding: 20px; color: #a0aec0; font-size: 13px; }
@@ -125,12 +147,20 @@
     <select id="month-select"></select>
   </div>
 </div>
+<div class="tabs" id="tabs">
+  <button data-tab="daily" class="active">日次</button>
+  <button data-tab="weekly">週次</button>
+  <button data-tab="monthly">月次</button>
+  <button data-tab="analysis">分析</button>
+</div>
 <div class="main" id="main-content">
   <div class="loading">データを読み込み中...</div>
 </div>
 
 <script>
 const SHEET_ID = '1GDfQDriEQErfpygGoJk4aGpsutsBnPHlop6dHsX0-wU';
+const LARGE_YEN = 1000000;   // 大型案件：税抜売上100万円以上
+const LOW_RATE = 0.20;       // 要注意：粗利率20%未満
 
 async function fetchSheet(name) {
   const url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID +
@@ -156,8 +186,11 @@ function parseRows(table) {
   return (table.rows || []).map(row => (row.c || []).map(cell => cell ? cell.v : null));
 }
 
-function yen(n) { return '¥' + Number(n).toLocaleString('ja-JP'); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function yen(n) { return '¥' + Math.round(Number(n)).toLocaleString('ja-JP'); }
 function pct(n) { return (Number(n)*100).toFixed(1) + '%'; }
+function pctOrDash(n) { return (n === null || n === undefined || isNaN(n)) ? '-' : pct(n); }
+function rateCls(n) { return (n === null || isNaN(n)) ? '' : n < 0 ? ' class="neg"' : n < LOW_RATE ? ' class="low"' : ''; }
 function fmtDate(s) {
   if (!s) return '';
   const p = s.split('-');
@@ -176,16 +209,36 @@ function fmtMonth(s) {
   const p = s.toString().slice(0,7).replace(/\//g,'-').split('-');
   return p.length >= 2 ? p[0] + '年' + parseInt(p[1]) + '月' : s;
 }
-function diffHtml(val, isYen, isPct) {
+function fmtMonthShort(s) { var p = s.split('-'); return p[0].slice(2) + '/' + parseInt(p[1]); }
+// 週の始まり（月曜）の日付 YYYY-MM-DD
+function weekStart(s) {
+  var p = s.split('-');
+  var dt = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+  var dow = (dt.getDay() + 6) % 7;
+  dt.setDate(dt.getDate() - dow);
+  return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+}
+function addDays(s, n) {
+  var p = s.split('-');
+  var dt = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]) + n);
+  return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+}
+function diffHtml(val, isYen, isPct, label) {
   if (val === null || val === undefined) return '';
+  label = label || '前日比';
   var cls = val > 0 ? 'up' : val < 0 ? 'down' : 'flat';
   var sign = val > 0 ? '▲ ' : val < 0 ? '▼ ' : '→ ';
   var str = isPct
-    ? sign + (Math.abs(val)*100).toFixed(1) + '% 前日比'
+    ? sign + (Math.abs(val)*100).toFixed(1) + '% ' + label
     : isYen
-      ? sign + '¥' + Math.abs(val).toLocaleString('ja-JP') + ' 前日比'
-      : sign + Math.abs(val) + ' 前日比';
+      ? sign + '¥' + Math.abs(val).toLocaleString('ja-JP') + ' ' + label
+      : sign + Math.abs(val) + ' ' + label;
   return '<div class="diff ' + cls + '">' + str + '</div>';
+}
+function diffCell(val) {
+  if (val === null || val === undefined) return '<td>-</td>';
+  var cls = val > 0 ? 'pos' : val < 0 ? 'neg' : '';
+  return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + (val > 0 ? '+' : '') + val + '</td>';
 }
 function card(label, value, diffStr) {
   return '<div class="card"><div class="label">' + label + '</div><div class="value">' + value + '</div>' + (diffStr||'') + '</div>';
@@ -193,20 +246,48 @@ function card(label, value, diffStr) {
 function pItem(label, val) {
   return '<div class="p-item"><div class="p-label">' + label + '</div><div class="p-value">' + val + '</div><div class="p-unit">件</div></div>';
 }
+// 案件の集計（件数・売上・外注費・粗利・粗利率）
+function agg(list) {
+  var o = { ken: 0, uri: 0, gai: 0, arari: 0 };
+  list.forEach(function(c) { o.ken++; o.uri += c.uri; o.gai += c.gai; o.arari += c.arari; });
+  o.rate = o.uri ? o.arari / o.uri : null;
+  return o;
+}
+function caseFlags(c) {
+  var f = '';
+  if (c.uri >= LARGE_YEN) f += '<span class="badge badge-large">大型</span>';
+  if (c.arari < 0) f += '<span class="badge badge-neg">赤字</span>';
+  else if (c.uri > 0 && c.arari / c.uri < LOW_RATE) f += '<span class="badge badge-low">低粗利</span>';
+  return f;
+}
+function caseTableHtml(list) {
+  var html = '<div class="table-wrap"><table>';
+  html += '<thead><tr><th>完工日</th><th>区分</th><th>取引先</th><th>案件名</th><th>工事種別</th><th>売上（税抜）</th><th>外注費</th><th>粗利</th><th>粗利率</th></tr></thead><tbody>';
+  list.forEach(function(c) {
+    var r = c.uri ? c.arari / c.uri : null;
+    html += '<tr><td>' + fmtDate(c.date) + '</td><td class="left">' + caseFlags(c) + '</td><td class="left">' + esc(c.client) + '</td><td class="left">' + esc(c.name) + (c.room ? ' ' + esc(c.room) : '') + '</td><td class="left">' + esc(c.kind) + '</td><td>' + yen(c.uri) + '</td><td>' + yen(c.gai) + '</td><td' + (c.arari < 0 ? ' class="neg"' : '') + '>' + yen(c.arari) + '</td><td' + rateCls(r) + '>' + pctOrDash(r) + '</td></tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
 
 async function init() {
   try {
-    const [histTable, weeklyTable, caseTable, monthlyTable] = await Promise.all([
+    const [histTable, weeklyTable, caseTable, monthlyTable, detailTable, mapTable] = await Promise.all([
       fetchSheet('履歴'),
       fetchSheet('週次推移').catch(() => null),
       fetchSheet('案件集計_履歴').catch(() => null),
       fetchSheet('月次まとめ').catch(() => null),
+      fetchSheet('案件明細').catch(() => null),
+      fetchSheet('取引先名対応表').catch(() => null),
     ]);
 
     const histRows = parseRows(histTable).filter(r => r[0]);
     const weeklyRows = weeklyTable ? parseRows(weeklyTable).filter(r => r[0]) : [];
     const caseRows = caseTable ? parseRows(caseTable).filter(r => r[0]) : [];
     const monthlyRows = monthlyTable ? parseRows(monthlyTable).filter(r => r[0]) : [];
+    const detailRows = detailTable ? parseRows(detailTable).filter(r => r[1]) : [];
+    const mapRows = mapTable ? parseRows(mapTable).filter(r => r[0] && r[0] !== '元の表記') : [];
 
     if (!histRows.length) {
       document.getElementById('main-content').innerHTML = '<div class="loading">データがありません</div>';
@@ -244,6 +325,24 @@ async function init() {
         t_reform: Number(r[11])||0, t_other: Number(r[12])||0, t_total: Number(r[13])||0,
       };
     }
+
+    // 取引先名の表記ゆれを統一名に寄せる（取引先名対応表）
+    var nameMap = {};
+    mapRows.forEach(function(r) { nameMap[String(r[0]).trim()] = String(r[1] || r[0]).trim(); });
+    function norm(n) { n = String(n || '').trim(); return nameMap[n] || n; }
+
+    // 案件明細（1行1案件・完工報告日ベース）
+    var details = detailRows.map(function(r) {
+      var d = parseDate(r[1]);
+      return {
+        month: r[0] ? String(r[0]).slice(0,7) : (d ? d.slice(0,7) : ''), date: d,
+        client: r[3] || norm(r[2]), name: r[4] || '', room: r[5] || '', kind: r[6] || '',
+        uri: Number(r[9])||0, gai: Number(r[10])||0, arari: Number(r[11])||0,
+      };
+    }).filter(function(c) { return c.date; });
+    var detailByMonth = {};
+    details.forEach(function(c) { (detailByMonth[c.month] = detailByMonth[c.month] || []).push(c); });
+    var detailMonths = Object.keys(detailByMonth).sort();
 
     var histByMonth = {};
     histRows.forEach(function(r) {
@@ -286,6 +385,22 @@ async function init() {
       caseByDate[d].push(fmtCase(r));
     });
 
+    // 依頼数（Slack集計）：日別は「本日」列、月別は月内最終日の「月累計」列を統一名で合算
+    var reqByDate = {};   // { 日付: { 統一名: 件数 } }
+    var reqByMonth = {};  // { 月: { 統一名: 件数 } }
+    var lastDateOfMonth = {};
+    Object.keys(caseByDate).forEach(function(d) {
+      var m = d.slice(0,7);
+      if (!lastDateOfMonth[m] || d > lastDateOfMonth[m]) lastDateOfMonth[m] = d;
+      var o = reqByDate[d] = {};
+      caseByDate[d].forEach(function(c) { var k = norm(c.client); o[k] = (o[k]||0) + c.t_total; });
+    });
+    Object.keys(lastDateOfMonth).forEach(function(m) {
+      var o = reqByMonth[m] = {};
+      caseByDate[lastDateOfMonth[m]].forEach(function(c) { var k = norm(c.client); o[k] = (o[k]||0) + c.m_total; });
+    });
+    function sumObj(o) { var s = 0; Object.keys(o || {}).forEach(function(k){ s += o[k]; }); return s; }
+
     var months = allMonthKeys().sort(function(a,b) { return b.localeCompare(a); });
     var latest = histRows[histRows.length-1];
 
@@ -296,19 +411,35 @@ async function init() {
       if (i === 0) opt.selected = true;
       sel.appendChild(opt);
     });
-    sel.addEventListener('change', function() { render(sel.value); });
+    sel.addEventListener('change', function() { render(sel.value); renderMonthly(sel.value); });
 
     document.getElementById('updated-text').textContent = '最終更新: ' + fmtDateFull(parseDate(latest[0]));
 
     document.getElementById('main-content').innerHTML =
-      '<div id="dynamic-section"></div><div id="static-section"></div>';
+      '<div class="tab-panel" id="tab-daily"><div id="dynamic-section"></div></div>' +
+      '<div class="tab-panel" id="tab-weekly"></div>' +
+      '<div class="tab-panel" id="tab-monthly"><div id="monthly-trend"></div><div id="monthly-detail"></div></div>' +
+      '<div class="tab-panel" id="tab-analysis"></div>';
 
-    function renderStatic() {
+    // タブ切替（URLの #weekly などで直接開ける）
+    function showTab(name) {
+      if (['daily','weekly','monthly','analysis'].indexOf(name) < 0) name = 'daily';
+      document.querySelectorAll('#tabs button').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === name); });
+      document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.toggle('active', p.id === 'tab-' + name); });
+      document.querySelector('.month-selector-wrap').style.visibility = (name === 'daily' || name === 'monthly') ? 'visible' : 'hidden';
+    }
+    document.querySelectorAll('#tabs button').forEach(function(b) {
+      b.addEventListener('click', function() { history.replaceState(null, '', '#' + b.dataset.tab); showTab(b.dataset.tab); });
+    });
+    window.addEventListener('hashchange', function() { showTab(location.hash.slice(1)); });
+
+    // ===== 月次タブ：月次推移（全期間） =====
+    function renderMonthlyTrend() {
       var html = '';
       html += '<div class="section-title">月次推移</div>';
-      html += '<div class="section-note">※ 数字は翌月10日頃の月次クローズで確定します。それまでは「仮確定」です。</div>';
+      html += '<div class="section-note">※ 数字は翌月10日頃の月次クローズで確定します。それまでは「仮確定」です。依頼数はSlack集計（2026年4月〜）。</div>';
       html += '<div class="table-wrap"><table>';
-      html += '<thead><tr><th>月</th><th>完工済み売上</th><th>粗利額</th><th>粗利率</th><th>件数</th><th>着地見込み</th></tr></thead><tbody>';
+      html += '<thead><tr><th>月</th><th>依頼数</th><th>完工済み売上</th><th>粗利額</th><th>粗利率</th><th>件数</th><th>着地見込み</th></tr></thead><tbody>';
       var now = new Date();
       var currentMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
       var allMonths = allMonthKeys().sort(function(a,b) { return b.localeCompare(a); });
@@ -325,11 +456,122 @@ async function init() {
         } else {
           badge = '<span class="badge badge-provisional">仮確定</span>';
         }
-        html += '<tr><td>' + fmtMonth(m) + badge + '</td><td>' + yen(latest.kankoUri) + '</td><td>' + yen(latest.kankoArari) + '</td><td>' + pct(latest.kankoArariRate) + '</td><td>' + latest.kankoKen + '件</td><td>' + yen(latest.chakuchi) + '</td></tr>';
+        var req = reqByMonth[m] ? sumObj(reqByMonth[m]) + '件' : '-';
+        html += '<tr><td>' + fmtMonth(m) + badge + '</td><td>' + req + '</td><td>' + yen(latest.kankoUri) + '</td><td>' + yen(latest.kankoArari) + '</td><td>' + pct(latest.kankoArariRate) + '</td><td>' + latest.kankoKen + '件</td><td>' + yen(latest.chakuchi) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      document.getElementById('monthly-trend').innerHTML = html;
+    }
+
+    // ===== 月次タブ：選択月の取引先別・工事種別別・大型案件 =====
+    function renderMonthly(m) {
+      var list = detailByMonth[m] || [];
+      var reqs = reqByMonth[m] || {};
+      var html = '';
+
+      html += '<div class="section-title">' + fmtMonth(m) + ' 取引先別</div>';
+      if (!list.length) html += '<div class="section-note">※ 案件明細（完了数・売上・粗利）は ' + (detailMonths.length ? fmtMonth(detailMonths[0]) : '2026年10月') + '分から。この月は依頼数のみ表示します。</div>';
+      else html += '<div class="section-note">※ 依頼数はSlackの依頼投稿、完了数以降はMORENNAの完工報告ベース（依頼月と完工月はずれます）。</div>';
+      var byClient = {};
+      list.forEach(function(c) { (byClient[c.client] = byClient[c.client] || []).push(c); });
+      var names = {};
+      Object.keys(byClient).forEach(function(k){ names[k] = 1; });
+      Object.keys(reqs).forEach(function(k){ if (reqs[k]) names[k] = 1; });
+      var rows = Object.keys(names).map(function(k) {
+        var a = agg(byClient[k] || []);
+        a.name = k; a.req = reqs[k] || 0;
+        a.large = (byClient[k] || []).filter(function(c){ return c.uri >= LARGE_YEN; }).length;
+        return a;
+      }).sort(function(a,b) { return (b.uri - a.uri) || (b.req - a.req); });
+      if (!rows.length) {
+        html += '<div class="table-wrap"><div class="no-data">データがありません</div></div>';
+      } else {
+        var tot = agg(list); tot.req = sumObj(reqs);
+        tot.large = list.filter(function(c){ return c.uri >= LARGE_YEN; }).length;
+        html += '<div class="table-wrap"><table>';
+        html += '<thead><tr><th>取引先</th><th>依頼数</th><th>完了数</th><th>売上（税抜）</th><th>外注費</th><th>粗利</th><th>粗利率</th><th>うち大型</th></tr></thead><tbody>';
+        rows.forEach(function(r) {
+          html += '<tr><td>' + esc(r.name) + '</td><td>' + (r.req || '-') + '</td><td>' + (r.ken || '-') + '</td><td>' + (r.ken ? yen(r.uri) : '-') + '</td><td>' + (r.ken ? yen(r.gai) : '-') + '</td><td>' + (r.ken ? yen(r.arari) : '-') + '</td><td' + rateCls(r.rate) + '>' + pctOrDash(r.rate) + '</td><td>' + (r.large || '-') + '</td></tr>';
+        });
+        html += '<tr class="total-row"><td>合　計</td><td>' + tot.req + '</td><td>' + tot.ken + '</td><td>' + yen(tot.uri) + '</td><td>' + yen(tot.gai) + '</td><td>' + yen(tot.arari) + '</td><td>' + pctOrDash(tot.rate) + '</td><td>' + tot.large + '</td></tr>';
+        html += '</tbody></table></div>';
+      }
+
+      if (list.length) {
+        html += '<div class="section-title">' + fmtMonth(m) + ' 工事種別別</div>';
+        var byKind = {};
+        list.forEach(function(c) { (byKind[c.kind] = byKind[c.kind] || []).push(c); });
+        html += '<div class="table-wrap"><table>';
+        html += '<thead><tr><th>工事種別</th><th>件数</th><th>売上（税抜）</th><th>粗利</th><th>粗利率</th></tr></thead><tbody>';
+        Object.keys(byKind).map(function(k){ var a = agg(byKind[k]); a.name = k; return a; })
+          .sort(function(a,b){ return b.uri - a.uri; })
+          .forEach(function(a) {
+            html += '<tr><td>' + esc(a.name) + '</td><td>' + a.ken + '</td><td>' + yen(a.uri) + '</td><td>' + yen(a.arari) + '</td><td' + rateCls(a.rate) + '>' + pctOrDash(a.rate) + '</td></tr>';
+          });
+        html += '</tbody></table></div>';
+
+        html += '<div class="section-title">' + fmtMonth(m) + ' 100万円以上の案件</div>';
+        var large = list.filter(function(c){ return c.uri >= LARGE_YEN; }).sort(function(a,b){ return b.uri - a.uri; });
+        if (!large.length) html += '<div class="table-wrap"><div class="no-data">該当なし</div></div>';
+        else html += caseTableHtml(large);
+      }
+      document.getElementById('monthly-detail').innerHTML = html;
+    }
+
+    // ===== 週次タブ =====
+    function renderWeekly() {
+      var html = '';
+      var weeks = {};
+      details.forEach(function(c) { var w = weekStart(c.date); (weeks[w] = weeks[w] || []).push(c); });
+      var reqWeek = {};      // { 週: 合計 }
+      var reqWeekCl = {};    // { 週: { 統一名: 件数 } }
+      Object.keys(reqByDate).forEach(function(d) {
+        var w = weekStart(d);
+        var o = reqWeekCl[w] = reqWeekCl[w] || {};
+        Object.keys(reqByDate[d]).forEach(function(k) { o[k] = (o[k]||0) + reqByDate[d][k]; reqWeek[w] = (reqWeek[w]||0) + reqByDate[d][k]; });
+      });
+      var wkeys = {};
+      Object.keys(weeks).forEach(function(w){ wkeys[w] = 1; });
+      Object.keys(reqWeek).forEach(function(w){ wkeys[w] = 1; });
+      var wlist = Object.keys(wkeys).sort(function(a,b){ return b.localeCompare(a); }).slice(0, 12);
+
+      html += '<div class="section-title">週別の推移（月曜〜日曜）</div>';
+      html += '<div class="section-note">※ 完工・売上・粗利は案件明細（' + (detailMonths.length ? fmtMonth(detailMonths[0]) : '2026年10月') + '〜）の完工報告日で集計。依頼数はSlack集計。最新週は途中経過です。</div>';
+      html += '<div class="table-wrap"><table>';
+      html += '<thead><tr><th>週</th><th>依頼数</th><th>完工数</th><th>売上（税抜）</th><th>粗利</th><th>粗利率</th><th>うち大型</th><th>通常案件の粗利率</th></tr></thead><tbody>';
+      wlist.forEach(function(w, i) {
+        var list = weeks[w] || [];
+        var a = agg(list);
+        var normal = agg(list.filter(function(c){ return c.uri < LARGE_YEN; }));
+        var large = list.length - normal.ken;
+        var cls = i === 0 ? ' class="today-row"' : '';
+        html += '<tr' + cls + '><td>' + fmtDate(w) + '〜' + fmtDate(addDays(w, 6)) + (i === 0 ? ' <span class="badge badge-ongoing">今週</span>' : '') + '</td><td>' + (reqWeek[w] || 0) + '</td><td>' + (list.length ? a.ken : '-') + '</td><td>' + (list.length ? yen(a.uri) : '-') + '</td><td>' + (list.length ? yen(a.arari) : '-') + '</td><td' + rateCls(a.rate) + '>' + pctOrDash(a.rate) + '</td><td>' + (large || '-') + '</td><td' + rateCls(normal.rate) + '>' + pctOrDash(normal.rate) + '</td></tr>';
       });
       html += '</tbody></table></div>';
 
-      html += '<div class="section-title">週次推移（金曜スナップショット）</div>';
+      // 取引先別の依頼数：今週・先週・直近4週平均（今週を除く）
+      if (wlist.length) {
+        var w0 = wlist[0], w1 = addDays(w0, -7);
+        var past4 = [1,2,3,4].map(function(k){ return addDays(w0, -7*k); });
+        var names = {};
+        [w0, w1].concat(past4).forEach(function(w){ Object.keys(reqWeekCl[w] || {}).forEach(function(k){ names[k] = 1; }); });
+        var rows = Object.keys(names).map(function(k) {
+          var t = (reqWeekCl[w0]||{})[k] || 0, l = (reqWeekCl[w1]||{})[k] || 0;
+          var avg = past4.reduce(function(s,w){ return s + ((reqWeekCl[w]||{})[k] || 0); }, 0) / 4;
+          return { name: k, t: t, l: l, avg: avg };
+        }).filter(function(r){ return r.t || r.l || r.avg; })
+          .sort(function(a,b){ return (b.avg - a.avg) || (b.t - a.t); });
+        html += '<div class="section-title">取引先別の依頼数（今週 ' + fmtDate(w0) + '〜 ／ 先週 ／ 直近4週平均）</div>';
+        html += '<div class="section-note">※ 4週平均より大きく少ない取引先は、依頼が減っている可能性があります。</div>';
+        html += '<div class="table-wrap"><table>';
+        html += '<thead><tr><th>取引先</th><th>今週</th><th>先週</th><th>先週との差</th><th>直近4週平均</th></tr></thead><tbody>';
+        rows.forEach(function(r) {
+          html += '<tr><td>' + esc(r.name) + '</td><td>' + r.t + '</td><td>' + r.l + '</td>' + diffCell(r.t - r.l) + '<td>' + r.avg.toFixed(1) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+
+      html += '<div class="section-title">参考：週次推移（金曜スナップショット）</div>';
       if (!weeklyRows.length) {
         html += '<div class="table-wrap"><div class="no-data">データがありません（金曜日に蓄積されます）</div></div>';
       } else {
@@ -341,9 +583,79 @@ async function init() {
         });
         html += '</tbody></table></div>';
       }
-      document.getElementById('static-section').innerHTML = html;
+      document.getElementById('tab-weekly').innerHTML = html;
     }
 
+    // ===== 分析タブ =====
+    function renderAnalysis() {
+      var html = '';
+      html += '<div class="section-title">大型案件の影響（月別）</div>';
+      html += '<div class="section-note">※ 大型＝税抜売上100万円以上。大型案件の有無で月全体の粗利率が大きく動くため、「通常案件」の粗利率を分けて見ます。</div>';
+      if (!detailMonths.length) {
+        html += '<div class="table-wrap"><div class="no-data">案件明細がまだありません</div></div>';
+      } else {
+        html += '<div class="table-wrap"><table>';
+        html += '<thead><tr><th>月</th><th>全体 売上</th><th>全体 粗利率</th><th>大型 件数</th><th>大型 売上</th><th>大型の構成比</th><th>大型 粗利率</th><th>通常 件数</th><th>通常 売上</th><th>通常 粗利率</th></tr></thead><tbody>';
+        detailMonths.slice().reverse().forEach(function(m) {
+          var list = detailByMonth[m];
+          var a = agg(list);
+          var lg = agg(list.filter(function(c){ return c.uri >= LARGE_YEN; }));
+          var nm = agg(list.filter(function(c){ return c.uri < LARGE_YEN; }));
+          html += '<tr><td>' + fmtMonth(m) + '</td><td>' + yen(a.uri) + '</td><td>' + pctOrDash(a.rate) + '</td><td>' + lg.ken + '</td><td>' + yen(lg.uri) + '</td><td>' + (a.uri ? pct(lg.uri / a.uri) : '-') + '</td><td' + rateCls(lg.rate) + '>' + pctOrDash(lg.rate) + '</td><td>' + nm.ken + '</td><td>' + yen(nm.uri) + '</td><td' + rateCls(nm.rate) + '>' + pctOrDash(nm.rate) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+
+      // 取引先別 依頼数の推移（Slack集計・月別）
+      var reqMonths = Object.keys(reqByMonth).sort().slice(-12);
+      html += '<div class="section-title">取引先別 依頼数の推移</div>';
+      html += '<div class="section-note">※ Slack集計（2026年4月〜）。直近3か月の合計が多い順。最新月は途中経過です。</div>';
+      if (!reqMonths.length) {
+        html += '<div class="table-wrap"><div class="no-data">データがありません</div></div>';
+      } else {
+        var names = {};
+        reqMonths.forEach(function(m){ Object.keys(reqByMonth[m]).forEach(function(k){ if (reqByMonth[m][k]) names[k] = 1; }); });
+        var last3 = reqMonths.slice(-3);
+        var rows = Object.keys(names).map(function(k) {
+          return { name: k, recent: last3.reduce(function(s,m){ return s + (reqByMonth[m][k] || 0); }, 0) };
+        }).sort(function(a,b){ return b.recent - a.recent; });
+        html += '<div class="table-wrap"><table>';
+        html += '<thead><tr><th>取引先</th>' + reqMonths.map(function(m){ return '<th>' + fmtMonthShort(m) + '</th>'; }).join('') + '</tr></thead><tbody>';
+        rows.forEach(function(r) {
+          html += '<tr><td>' + esc(r.name) + '</td>' + reqMonths.map(function(m){ return '<td>' + (reqByMonth[m][r.name] || '-') + '</td>'; }).join('') + '</tr>';
+        });
+        html += '<tr class="total-row"><td>合　計</td>' + reqMonths.map(function(m){ return '<td>' + sumObj(reqByMonth[m]) + '</td>'; }).join('') + '</tr>';
+        html += '</tbody></table></div>';
+      }
+
+      // 取引先別 粗利率の推移（案件明細・月別）
+      html += '<div class="section-title">取引先別 粗利率の推移</div>';
+      html += '<div class="section-note">※ 案件明細（' + (detailMonths.length ? fmtMonth(detailMonths[0]) : '2026年10月') + '〜）。カッコ内は完了数。売上の多い順。</div>';
+      if (!detailMonths.length) {
+        html += '<div class="table-wrap"><div class="no-data">案件明細がまだありません</div></div>';
+      } else {
+        var dm = detailMonths.slice(-12);
+        var cl = {};
+        dm.forEach(function(m){ detailByMonth[m].forEach(function(c){ var o = cl[c.client] = cl[c.client] || { name: c.client, uri: 0, byM: {} }; o.uri += c.uri; (o.byM[m] = o.byM[m] || []).push(c); }); });
+        html += '<div class="table-wrap"><table>';
+        html += '<thead><tr><th>取引先</th>' + dm.map(function(m){ return '<th>' + fmtMonthShort(m) + '</th>'; }).join('') + '<th>期間計 売上</th><th>期間計 粗利率</th></tr></thead><tbody>';
+        Object.keys(cl).map(function(k){ return cl[k]; }).sort(function(a,b){ return b.uri - a.uri; }).forEach(function(o) {
+          var all = [];
+          html += '<tr><td>' + esc(o.name) + '</td>' + dm.map(function(m) {
+            var l = o.byM[m] || []; all = all.concat(l);
+            if (!l.length) return '<td>-</td>';
+            var a = agg(l);
+            return '<td' + rateCls(a.rate) + '>' + pctOrDash(a.rate) + ' <small style="color:#a0aec0">(' + a.ken + ')</small></td>';
+          }).join('');
+          var t = agg(all);
+          html += '<td>' + yen(t.uri) + '</td><td' + rateCls(t.rate) + '>' + pctOrDash(t.rate) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      document.getElementById('tab-analysis').innerHTML = html;
+    }
+
+    // ===== 日次タブ =====
     function render(selectedMonth) {
       var rows = histByMonth[selectedMonth] || [];
       var hLatest = (rows[0] && (rows[0].kankoUri || rows[0].kankoKen)) ? rows[0] : null;
@@ -368,6 +680,21 @@ async function init() {
       html += card('月内着地見込み', yen(latest.chakuchi), isCurrentMonth ? diffHtml(dChak,true,false) : null);
       html += '</div>';
 
+      // 大型案件を除いた「通常案件」の数字（案件明細がある月のみ）
+      var mlist = detailByMonth[selectedMonth] || [];
+      if (mlist.length) {
+        var nm = agg(mlist.filter(function(c){ return c.uri < LARGE_YEN; }));
+        var lg = agg(mlist.filter(function(c){ return c.uri >= LARGE_YEN; }));
+        var all = agg(mlist);
+        html += '<div class="cards" style="margin-top:12px">';
+        html += card('通常案件の粗利率', pctOrDash(nm.rate), '<div class="diff flat">' + nm.ken + '件 / ' + yen(nm.uri) + '</div>');
+        html += card('大型案件（100万円以上）', lg.ken + '件', '<div class="diff flat">' + yen(lg.uri) + '（売上の' + (all.uri ? pct(lg.uri / all.uri) : '-') + '）</div>');
+        html += card('大型案件の粗利率', pctOrDash(lg.rate), '');
+        html += card('依頼数（Slack・月累計）', (reqByMonth[selectedMonth] ? sumObj(reqByMonth[selectedMonth]) : '-') + '件', '');
+        html += '</div>';
+        html += '<div class="section-note" style="margin-top:6px">※ 下段は案件明細（' + fmtDateFull(mlist.reduce(function(a,c){ return c.date > a ? c.date : a; }, '')) + 'までの完工）から計算。</div>';
+      }
+
       if (isCurrentMonth) {
         html += '<div class="section-title">進行中パイプライン</div>';
         html += '<div class="pipeline">';
@@ -376,6 +703,15 @@ async function init() {
         html += pItem('施工', latest.seko);
         html += pItem('完工', latest.kankoChu);
         html += '</div>';
+      }
+
+      if (mlist.length) {
+        var watch = mlist.filter(function(c) { return c.uri >= LARGE_YEN || c.arari < 0 || (c.uri > 0 && c.arari / c.uri < LOW_RATE); })
+          .sort(function(a,b){ return b.date.localeCompare(a.date) || (b.uri - a.uri); });
+        html += '<div class="section-title">要注意の案件（大型・低粗利・赤字）</div>';
+        html += '<div class="section-note">※ 大型＝税抜売上100万円以上／低粗利＝粗利率20%未満。新しい完工順。</div>';
+        if (!watch.length) html += '<div class="table-wrap"><div class="no-data">該当なし</div></div>';
+        else html += caseTableHtml(watch);
       }
 
       html += '<div class="section-title">案件集計（Slackレポート）</div>';
@@ -396,7 +732,7 @@ async function init() {
         caseDateRows.forEach(function(r) {
           tot.m_taikyo+=r.m_taikyo; tot.m_kushitsu+=r.m_kushitsu; tot.m_nyukyo+=r.m_nyukyo; tot.m_reform+=r.m_reform; tot.m_other+=r.m_other; tot.m_total+=r.m_total;
           tot.t_taikyo+=r.t_taikyo; tot.t_kushitsu+=r.t_kushitsu; tot.t_nyukyo+=r.t_nyukyo; tot.t_reform+=r.t_reform; tot.t_other+=r.t_other; tot.t_total+=r.t_total;
-          html += '<tr><td>' + r.client + '</td>';
+          html += '<tr><td>' + esc(r.client) + '</td>';
           html += '<td>' + (r.m_taikyo||'-') + '</td><td>' + (r.m_kushitsu||'-') + '</td><td>' + (r.m_nyukyo||'-') + '</td><td>' + (r.m_reform||'-') + '</td><td>' + (r.m_other||'-') + '</td><td><strong>' + r.m_total + '</strong></td>';
           html += '<td class="today-col">' + (r.t_taikyo||'-') + '</td><td class="today-col">' + (r.t_kushitsu||'-') + '</td><td class="today-col">' + (r.t_nyukyo||'-') + '</td><td class="today-col">' + (r.t_reform||'-') + '</td><td class="today-col">' + (r.t_other||'-') + '</td><td class="today-col"><strong>' + r.t_total + '</strong></td>';
           html += '</tr>';
@@ -424,8 +760,12 @@ async function init() {
       document.getElementById('dynamic-section').innerHTML = html;
     }
 
-    renderStatic();
+    renderMonthlyTrend();
+    renderWeekly();
+    renderAnalysis();
     render(months[0]);
+    renderMonthly(months[0]);
+    showTab(location.hash.slice(1));
 
   } catch(e) {
     document.getElementById('main-content').innerHTML = '<div class="loading">⚠️ ' + e.message + '</div>';
